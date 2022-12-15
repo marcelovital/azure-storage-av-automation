@@ -1,0 +1,281 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "SubscriptionIDOfTheTargetStorageAccount": {
+            "type": "string",
+            "defaultValue": "acf6891c-243b-419b-9920-6a03e6924c4e",
+            "metadata": {
+                "description": "The Subscription ID of the Storage Account that should be scanned. The default option will use the subscription of the resource group you chose to deploy the template in."
+            }
+        },
+        "NameOfTheResourceGroupTheTargetStorageAccountBelongsTo": {
+            "type": "string",
+            "defaultValue": "uffective-uat-pwc-rg-01",
+            "metadata": {
+                "description": "The name of the Resource Group the target Storage Account belongs to (the account that should be scanned). The default option will use the resource group you chose to deploy the template in."
+            }
+        },
+        "NameOfTargetStorageAccount": {
+            "type": "string",
+            "defaultValue": "uffuatpwcsa01",
+            "metadata": {
+                "description": "The name of the Storage Account that should be scanned."
+            }
+        },
+        "NameOfTargetContainer": {
+            "type": "string",
+            "defaultValue": "new-files",
+            "metadata": {
+                "description": "The name of the container that should be scanned. This field expects the name of an existing container in your target Storage Account."
+            }
+        },
+        "existingVnetName": {
+            "type": "string",
+            "defaultValue": "vnet-uat-01",
+            "metadata": {
+                "description": "The name of the Virtual Network hosting the storage account to protect."
+            }
+        },
+        "existingVnetRg": {
+            "type": "string",
+            "defaultValue": "networks-uat-rg-01",
+            "metadata": {
+                "description": "The name of the Resource Group that contains the Virtual Network."
+            }
+        },
+                "existingVnetSub": {
+            "type": "string",
+            "defaultValue": "acf6891c-243b-419b-9920-6a03e6924c4e",
+            "metadata": {
+                "description": "The Subscription ID of the Virtual Network."
+            }
+        },
+        "functionSubnetAdressSpace": {
+            "type": "string",
+            "defaultValue": "10.170.169.16/28",
+            "metadata": {
+                "description": "Available address space inside the vnet address space."
+            }
+        },
+        "VMSubnetAdressSpace": {
+            "type": "string",
+            "defaultValue": "10.170.169.32/28",
+            "metadata": {
+                "description": "Available address space inside the vnet address space."
+            }
+        },
+        "cleanContainerName": {
+            "type": "string",
+            "defaultValue": "clean-files",
+            "metadata": {
+                "description": "The Container name to transfer clean scanned blobs to, can be new or existing."
+            }
+        },
+        "quarantineContainerName": {
+            "type": "string",
+            "defaultValue": "quarantine-files",
+            "metadata": {
+                "description": "The Container name to transfer files that contain malware to, can be new or existing."
+            }
+        },
+        "appServicePlanSku": {
+            "type": "string",
+            "defaultValue": "S1",
+            "allowedValues": [
+                "S1",
+                "S2",
+                "S3",
+                "P1",
+                "P2",
+                "P3",
+                "P1V2",
+                "P2V2",
+                "P3V2"
+            ],
+            "metadata": {
+                "description": "Choose the right App Service Plan to support your needs. The App Service Plan affects the throughput - the amount of data that can be scanned at a certain time. You can modify this configuration any time to support higher loads, the update will cause a few minutes downtime."
+            }
+        },
+        "VMSize": {
+            "type": "string",
+            "defaultValue": "Standard_B1ms",
+            "metadata": {
+                "description": "Choose the right VM size to support your needs. The VM size affects the maximal file size that you can scan. You can modify this configuration any time to support higher loads, the update will cause a few minutes downtime."
+            }
+        },
+        "VMAdminUsername": {
+            "type": "string",
+            "defaultValue": "uffadminstav"
+        },
+        "VMAdminPassword": {
+            "type": "securestring",
+            "defaultValue": "tkg_Vgr*GbNm@6YBqAHFTqH.i_uFZ9"
+        },
+        "addPublicIPToVM": {
+            "type": "bool",
+            "defaultValue": false,
+            "metadata": {
+                "description": "Specifies whether the VM will have a public IP endpoint. Having a public endpoint makes the VM less secure."
+            }
+        },
+        "ScanHttpServerZipURL": {
+            "type": "string",
+            "defaultValue": "https://github.com/Azure/azure-storage-av-automation/releases/latest/download/ScanHttpServer.zip",
+            "metadata": {
+                "description": "URL of the zipped Function Code, default value points to the latest build."
+            }
+        },
+        "ScanUploadedBlobFunctionZipURL": {
+            "type": "string",
+            "defaultValue": "https://github.com/Azure/azure-storage-av-automation/releases/latest/download/ScanUploadedBlobFunction.zip",
+            "metadata": {
+                "description": "URL of the source code of the Http Server That will run on the VM, default value points to the latest build."
+            }
+        },
+        "VMInitScriptURL": {
+            "type": "string",
+            "defaultValue": "https://github.com/Azure/azure-storage-av-automation/releases/latest/download/VMInit.ps1",
+            "metadata": {
+                "description": "URL of the VMInit.ps1 script, default value points to the latest build."
+            }
+        },
+        "addAppInsightsAndAlerts": {
+            "type": "bool",
+            "defaultValue": false,
+            "metadata": {
+                "description": "Specifies whether App Insights, Log Analytics Workspace and alerts will be included in this deployment."
+            }
+        }
+    },
+    "variables": {
+        "hostStorageAccountType": "Standard_LRS",
+        "resourceNameSuffix": "[concat('avauto',uniqueString(parameters('NameOfTargetStorageAccount'), parameters('NameOfTargetContainer')))]",
+        "appServicePlanName": "uff-uat-stav-plan-01",
+        "communicationPort": "443",
+        "computerName": "AntivirusVm",
+        "functionAppName": "[concat('functionapp', variables('resourceNameSuffix'))]",
+        "functionHostStorageAccountName": "uffstavuatsa01",
+        "functionSubnetName": "func-uat-01",
+        "functionWorkerRuntime": "dotnet",
+        "hostStorageAccountSecretName": "hostStorageConnectionString",
+        "keyVaultName": "[concat('vault', variables('resourceNameSuffix'))]",
+        "keyVaultSkuName": "Standard",
+        "uniqueStringSuffix": "",
+        "loganalyticsworkspace": "[concat('logworkspace', variables('uniqueStringSuffix'))]",
+        "networkSecurityGroupName": "uff-uat-stav-nsg-01",
+        "publicIpAddressName": "[concat('publicip', variables('resourceNameSuffix'))]",
+        "publicIpId": {
+            "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressName'))]"
+        },
+        "targetStorageAccountResourceID": "[resourceId(parameters('SubscriptionIDOfTheTargetStorageAccount'), parameters('NameOfTheResourceGroupTheTargetStorageAccountBelongsTo'), 'Microsoft.Storage/storageAccounts', parameters('NameOfTargetStorageAccount'))]",
+        "targetStorageAccountSecretName": "[concat(parameters('NameOfTargetStorageAccount'), 'connectionString')]",
+        "vmDiskSizeGB": 32,
+        "vmInitScriptCommand": "[concat('powershell.exe -ExecutionPolicy Bypass -File VMInit.ps1 \"', parameters('ScanHttpServerZipURL'), '\"')]",
+        "vmName": "[concat('vm', variables('resourceNameSuffix'))]",
+        "vmNetworkInterfateworkInterfaceName": "[concat('vmnic', variables('resourceNameSuffix'))]",
+        "vmSubnetName": "vm-uat-01"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "name": "[variables('functionHostStorageAccountName')]",
+            "apiVersion": "2019-06-01",
+            "location": "[resourceGroup().location]",
+            "kind": "StorageV2",
+            "sku": {
+                "name": "[variables('hostStorageAccountType')]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "name": "[variables('appServicePlanName')]",
+            "apiVersion": "2019-08-01",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "[parameters('appServicePlanSku')]"
+            },
+            "kind": "app"
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "name": "[variables('networkSecurityGroupName')]",
+            "apiVersion": "2020-05-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "Function-VM-Communication-Rule-in",
+                        "properties": {
+                            "description": "Open port to allow Http requests between Function and VM",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "[variables('communicationPort')]",
+                            "sourceAddressPrefix": "VirtualNetwork",
+                            "destinationAddressPrefix": "VirtualNetwork",
+                            "access": "Allow",
+                            "priority": 1000,
+                            "direction": "Inbound"
+                        }
+                    },
+                    {
+                        "name": "Function-VM-Communication-Rule-out",
+                        "properties": {
+                            "description": "Open port to allow Http requests between Function and VM",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "[variables('communicationPort')]",
+                            "sourceAddressPrefix": "VirtualNetwork",
+                            "destinationAddressPrefix": "VirtualNetwork",
+                            "access": "Allow",
+                            "priority": 1000,
+                            "direction": "Outbound"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "nestedTemplate",
+            "resourceGroup": "[parameters('existingVnetName')]",
+            "subscriptionId": "[parameters('existingVnetSub')]",
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {},
+          "variables": {},
+          "resources": [
+            
+          ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks/subnets",
+            "name": "[concat(parameters('existingVnetName'),'/',variables('functionSubnetName'))]",
+            "apiVersion": "2020-07-01",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+            ],
+            "properties": {
+                "addressPrefix": "[parameters('functionSubnetAdressSpace')]",
+                "delegations": [
+                    {
+                        "name": "DelegationService",
+                        "properties": {
+                            "serviceName": "Microsoft.Web/serverFarms"
+                        }
+                    }
+                ],
+                "networkSecurityGroup": {
+                    "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+                }
+            }
+        }
+    ]
+}
